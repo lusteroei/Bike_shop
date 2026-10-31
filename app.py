@@ -6,7 +6,7 @@ import urllib.parse
 import datetime as dt_module
 import os
 import shutil
-import glob  # <--- הוספנו את זה כאן!
+import glob
 
 DB_FILE = "bike_shop.db"
 BACKUP_DIR = "backups"

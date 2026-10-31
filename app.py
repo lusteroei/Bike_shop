@@ -6,6 +6,7 @@ import urllib.parse
 import datetime as dt_module
 import os
 import shutil
+import glob  # <--- הוספנו את זה כאן!
 
 DB_FILE = "bike_shop.db"
 BACKUP_DIR = "backups"
@@ -182,7 +183,8 @@ menu = [
     "➕ קבלת תיקון / לקוח חדש",
     "👤 ניהול לקוחות והיסטוריה",
     "📦 מחירון חלפים ועבודות",
-    chat_menu_label
+    chat_menu_label,
+    "🔄 שחזור גיבויים אוטומטיים"
 ]
 choice = st.sidebar.radio("תפריט ניווט", menu)
 
@@ -715,116 +717,150 @@ elif choice == "📦 מחירון חלפים ועבודות":
             i_price = inv_row['מחיר']
             i_notes = inv_row['הערות']
 
-            with st.expander(f"🔩 {i_name} — ₪{i_price}"):
+            with st.expander(f"📦 {i_name} — ₪{i_price}"):
                 with st.form(key=f"edit_inv_{i_id}"):
-                    e_name = st.text_input("שם הפריט:", value=str(i_name))
-                    e_price = st.number_input("מחיר (₪):", min_value=0.0, value=float(i_price), step=5.0)
-                    e_notes = st.text_input("הערות:", value=str(i_notes or ''))
+                    new_inv_name = st.text_input("שם פריט:", value=str(i_name))
+                    new_inv_price = st.number_input("מחיר (₪):", min_value=0.0, step=5.0, value=float(i_price))
+                    new_inv_notes = st.text_input("הערות:", value=str(i_notes if i_notes else ""))
 
-                    if st.form_submit_button("💾 שמור שינויים במחירון"):
-                        inv_conn = get_connection()
-                        inv_cursor = inv_conn.cursor()
-                        inv_cursor.execute("UPDATE inventory SET part_name = ?, price = ?, notes = ? WHERE id = ?", (e_name.strip(), e_price, e_notes.strip(), i_id))
-                        inv_conn.commit()
-                        inv_conn.close()
-                        st.success("המחירון עודכן!")
-                        st.rerun()
-
-                if st.button("🗑️ מחק פריט מהמחירון", key=f"del_inv_{i_id}"):
-                    dli_conn = get_connection()
-                    dli_cursor = dli_conn.cursor()
-                    dli_cursor.execute("DELETE FROM inventory WHERE id = ?", (i_id,))
-                    dli_conn.commit()
-                    dli_conn.close()
-                    st.warning(f"הפריט '{i_name}' נמחק!")
-                    st.rerun()
+                    col_btn1, col_btn2 = st.columns(2)
+                    with col_btn1:
+                        if st.form_submit_button("💾 עדכן פריט"):
+                            up_inv_conn = get_connection()
+                            up_inv_cursor = up_inv_conn.cursor()
+                            up_inv_cursor.execute("UPDATE inventory SET part_name = ?, price = ?, notes = ? WHERE id = ?", (new_inv_name.strip(), new_inv_price, new_inv_notes.strip(), i_id))
+                            up_inv_conn.commit()
+                            up_inv_conn.close()
+                            st.success("הפריט עודכן בהצלחה!")
+                            st.rerun()
+                    with col_btn2:
+                        if st.form_submit_button("🗑️ מחק פריט"):
+                            del_inv_conn = get_connection()
+                            del_inv_cursor = del_inv_conn.cursor()
+                            del_inv_cursor.execute("DELETE FROM inventory WHERE id = ?", (i_id,))
+                            del_inv_conn.commit()
+                            del_inv_conn.close()
+                            st.warning("הפריט נמחק מהמחירון!")
+                            st.rerun()
     else:
-        st.info("אין עדיין פריטים במחירון.")
+        st.info("המחירון ריק עדיין. הוסף חלקים או עבודות מעל.")
 
 # ==========================================
 # 5. צ'אט עובדים פנימי
 # ==========================================
-elif choice.startswith("💬 צ'אט עובדים פנימי"):
-    st.title("💬 לוח הודעות ותקשורת צוות")
+elif choice == chat_menu_label:
+    st.title("💬 צ'אט עובדים פנימי לסדנה")
+    st.caption("הודעות והערות צוות בין משמרות (למשל: אופניים שצריכים תשומת לב מיוחדת, רכיבי קסטה שהוזמנו וכדומה)")
 
-    conn = get_connection()
-    col_chat1, col_chat2 = st.columns([1, 2])
-
-    with col_chat1:
-        st.subheader("✍️ כתיבת הודעה חדשה")
-        with st.form("staff_msg_form"):
-            sender = st.text_input("שם העובד/שולח")
-            message = st.text_area("תוכן ההודעה")
-            send_btn = st.form_submit_button("שלח הודעה")
-
-            if send_btn and sender and message:
-                cursor = conn.cursor()
-                cursor.execute("INSERT INTO staff_messages (sender_name, message, status) VALUES (?, ?, 'פתוח')", (sender, message))
-                conn.commit()
-                st.success("ההודעה נשלחה!")
+    with st.form("new_staff_msg_form", clear_on_submit=True):
+        sender_input = st.text_input("שם העובד (שולח) *", placeholder="למשל: רועי")
+        msg_input = st.text_area("תוכן ההודעה / משימה *", placeholder="למשל: לבדוק מחר בבוקר אם הגיע הציר המרכזי לטרק...")
+        
+        if st.form_submit_button("📤 שלח הודעה לצוות"):
+            if not sender_input.strip() or not msg_input.strip():
+                st.error("חובה להזין את שם השולח ואת תוכן ההודעה!")
+            else:
+                m_conn = get_connection()
+                m_cursor = m_conn.cursor()
+                m_cursor.execute("INSERT INTO staff_messages (sender_name, message, status) VALUES (?, ?, 'פתוח')", (sender_input.strip(), msg_input.strip()))
+                m_conn.commit()
+                m_conn.close()
+                st.success("ההודעה נשלחה לצוות בהצלחה!")
                 st.rerun()
 
-    with col_chat2:
-        st.subheader("📢 מעקב הודעות צוות")
-        show_filter = st.radio("סינון הודעות:", ["הצג הודעות פתוחות בלבד", "הצג את כל ההודעות (כולל שטופלו)"], horizontal=True)
+    st.markdown("---")
+    st.subheader("📜 הודעות צוות פעורות / היסטוריה")
 
-        if show_filter == "הצג הודעות פתוחות בלבד":
-            df_msgs = pd.read_sql_query("SELECT id, sender_name, message, status, created_at FROM staff_messages WHERE status = 'פתוח' ORDER BY id DESC", conn)
-        else:
-            df_msgs = pd.read_sql_query("SELECT id, sender_name, message, status, created_at FROM staff_messages ORDER BY id DESC", conn)
-        conn.close()
+    m_conn = get_connection()
+    df_msgs = pd.read_sql_query("SELECT id, sender_name, message, status, created_at FROM staff_messages ORDER BY id DESC", m_conn)
+    m_conn.close()
 
-        if not df_msgs.empty:
-            for _, r in df_msgs.iterrows():
-                status_icon = "🟢" if r['status'] == 'טופל' else "🔴"
-                msg_title = f"{status_icon} הודעה #{r['id']} מאת {r['sender_name']}"
+    if not df_msgs.empty:
+        for _, m_row in df_msgs.iterrows():
+            m_id = m_row['id']
+            m_sender = m_row['sender_name']
+            m_text = m_row['message']
+            m_status = m_row['status']
+            m_time = m_row['created_at']
 
-                with st.expander(msg_title):
-                    st.write(f"**תאריך:** {r['created_at']}")
-                    st.write(f"**תוכן:** {r['message']}")
+            status_emoji = "🔴" if m_status == 'פתוח' else "✅"
+            box_title = f"{status_emoji} הודעה #{m_id} מאת {m_sender} ({m_time}) - סטטוס: {m_status}"
 
-                    c_btn1, c_btn2 = st.columns(2)
-                    with c_btn1:
-                        if r['status'] == 'פתוח' and st.button("✅ סמן כטופל", key=f"resolve_{r['id']}"):
-                            msg_conn = get_connection()
-                            msg_cursor = msg_conn.cursor()
-                            msg_cursor.execute("UPDATE staff_messages SET status = 'טופל' WHERE id = ?", (r['id'],))
-                            msg_conn.commit()
-                            msg_conn.close()
+            with st.expander(box_title):
+                st.write(f"**תוכן:** {m_text}")
+                
+                col_s1, col_s2 = st.columns(2)
+                with col_s1:
+                    if m_status == 'פתוח':
+                        if st.button("✅ סמן כטופל / סגור הודעה", key=f"close_msg_{m_id}"):
+                            up_m_conn = get_connection()
+                            up_m_conn.execute("UPDATE staff_messages SET status = 'סגור' WHERE id = ?", (m_id,))
+                            up_m_conn.commit()
+                            up_m_conn.close()
+                            st.success("ההודעה סומנה כטופלה!")
                             st.rerun()
-                    with c_btn2:
-                        if r['status'] == 'טופל' and st.button("🔄 פתח מחדש", key=f"reopen_{r['id']}"):
-                            msg_conn = get_connection()
-                            msg_cursor = msg_conn.cursor()
-                            msg_conn.close()
+                    else:
+                        if st.button("🔄 פתח מחדש", key=f"reopen_msg_{m_id}"):
+                            up_m_conn = get_connection()
+                            up_m_conn.execute("UPDATE staff_messages SET status = 'פתוח' WHERE id = ?", (m_id,))
+                            up_m_conn.commit()
+                            up_m_conn.close()
                             st.rerun()
-        else:
-            st.info("אין הודעות להצגה כרגע.")
+                with col_s2:
+                    if st.button("🗑️ מחק הודעה לצמיתות", key=f"del_msg_{m_id}"):
+                        del_m_conn = get_connection()
+                        del_m_conn.execute("DELETE FROM staff_messages WHERE id = ?", (m_id,))
+                        del_m_conn.commit()
+                        del_m_conn.close()
+                        st.rerun()
+    else:
+        st.info("אין הודעות צוות כרגע.")
 
-# --- הגדרות וכפתורי גיבוי בתפריט הצד ---
-st.sidebar.markdown("---")
-st.sidebar.header("💾 גיבוי נתונים")
-
-with st.sidebar.expander("⚙️ הגדרות גיבוי אוטומטי"):
-    hour_options = [f"{h:02d}:00" for h in range(24)]
-    current_selected_hours = [f"{h:02d}:00" for h in st.session_state["backup_hours"]]
-
-    selected_hour_strings = st.multiselect("בחר שעות לגיבוי אוטומטי ביום:", options=hour_options, default=current_selected_hours)
-    new_hours = sorted([int(h.split(":")[0]) for h in selected_hour_strings])
-    if new_hours != st.session_state["backup_hours"]:
-        st.session_state["backup_hours"] = new_hours
-        st.success("שעות הגיבוי עודכנו!")
-
-if os.path.exists(DB_FILE):
-    with open(DB_FILE, "rb") as fp:
-        now_str = dt_module.datetime.now().strftime("%Y-%m-%d_%H-%M")
-        backup_name = f"bike_shop_backup_{now_str}.db"
-        st.sidebar.download_button(
-            label="📥 הורד גיבוי מסד נתונים ידני",
-            data=fp,
-            file_name=backup_name,
-            mime="application/x-sqlite3",
-            help="לחץ כאן כדי להוריד עותק גיבוי מעודכן של כל נתוני החנות",
+# ==========================================
+# 6. שחזור גיבויים אוטומטיים
+# ==========================================
+elif choice == "🔄 שחזור גיבויים אוטומטיים":
+    st.title("🔄 שחזור מסד נתונים מגיבוי אוטומטי")
+    st.warning("⚠️ שחזור גיבוי יחליף את מסד הנתונים הנוכחי במצב שהיה בזמן שנוצר הגיבוי. מומלץ להוריד קודם גיבוי ידני של המצב הנוכחי למקרה הצורך.")
+    
+    if os.path.exists(DB_FILE):
+        with open(DB_FILE, "rb") as current_db_file:
+            st.download_button(
+                label="📥 הורד גיבוי ידני של המצב הנוכחי למחשב",
+                data=current_db_file,
+                file_name=f"bike_shop_manual_backup_{datetime.now().strftime('%Y%m%d_%H%M')}.db",
+                mime="application/x-sqlite3"
+            )
+            
+    st.markdown("---")
+    st.subheader("📦 רשימת הגיבויים האוטומטיים הקיימים בשרת:")
+    
+    backup_files = sorted(glob.glob(os.path.join(BACKUP_DIR, "*.db")), reverse=True)
+    
+    if backup_files:
+        selected_backup_file = st.selectbox(
+            "בחר קובץ גיבוי לשחזור:",
+            backup_files,
+            format_func=lambda x: os.path.basename(x).replace('bike_shop_auto_', '').replace('.db', '')
         )
-else:
-    st.sidebar.warning("קובץ מסד הנתונים לא נמצא.")
+        
+        col_b1, col_b2 = st.columns([1, 3])
+        with col_b1:
+            if st.button("⚠️ בצע שחזור לגיבוי הנבחר", type="primary"):
+                try:
+                    shutil.copy(selected_backup_file, DB_FILE)
+                    st.success("הגיבוי שוחזר בהצלחה! מרענן את המערכת...")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"שגיאה בשחזור הגיבוי: {e}")
+        
+        with col_b2:
+            with open(selected_backup_file, "rb") as b_file:
+                st.download_button(
+                    label="📥 הורד את קובץ הגיבוי הספציפי הזה למחשב",
+                    data=b_file,
+                    file_name=os.path.basename(selected_backup_file),
+                    mime="application/x-sqlite3"
+                )
+    else:
+        st.info("אין עדיין קבצי גיבוי אוטומטיים בתיקייה.")

@@ -149,6 +149,35 @@ init_db()
 
 st.set_page_config(page_title="ניהול חנות אופניים", layout="wide")
 
+# --- הזרקת עיצוב CSS לעברית (RTL), יישור לימין ויישור טקסט בתיבות ---
+st.markdown("""
+    <style>
+    /* כיוון כללי מימין לשמאל */
+    .stApp {
+        direction: RTL;
+        text-align: right;
+    }
+    
+    /* יישור תפריט צד מימין לשמאל */
+    section[data-testid="stSidebar"] {
+        direction: RTL;
+        text-align: right;
+    }
+
+    /* יישור טקסט בתיבות טקסט רגילות ובטקסט-אריאה לימין */
+    input[type="text"], textarea {
+        text-align: right !important;
+        direction: RTL !important;
+    }
+    
+    /* תמיכה ביישור תוויות ותפריטים */
+    label {
+        direction: RTL !important;
+        text-align: right !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 st.sidebar.title("🚲 סדנת אופניים")
 
 conn_chk = get_connection()
@@ -176,11 +205,11 @@ menu = [
 ]
 choice = st.sidebar.radio("תפריט ניווט", menu)
 
-# --- פונקציות Callback לעדכון תיאור העבודה בלבד (ללא נגיעה במחיר) ---
-def handle_add_part(wo_id, part_select_key, work_key):
+# --- פונקציית Callback להוספת פריט אוטומטית ברגע בחירה מהתפריט ---
+def handle_select_part(wo_id, part_select_key, work_key):
     st.session_state["active_ticket_id"] = wo_id
-
     selected_val = st.session_state.get(part_select_key)
+    
     if selected_val and selected_val != "-- בחר פריט --":
         parts_parts = selected_val.rsplit(" (₪", 1)
         p_name = parts_parts[0]
@@ -203,7 +232,8 @@ def handle_add_part(wo_id, part_select_key, work_key):
         conn.close()
 
         st.session_state[work_key] = new_work.strip()
-        st.success(f"הפריט '{p_name}' נוסף לתיאור העבודה בהצלחה!")
+        # איפוס הבחירה חזרה לברירת המחדל
+        st.session_state[part_select_key] = "-- בחר פריט --"
 
 def handle_reset_work(wo_id, work_key):
     st.session_state["active_ticket_id"] = wo_id
@@ -214,7 +244,6 @@ def handle_reset_work(wo_id, work_key):
     cur.execute("UPDATE work_orders SET work_done = '' WHERE id = ?", (wo_id,))
     conn.commit()
     conn.close()
-    st.warning("תיאור העבודה נוקה!")
 
 # ==========================================
 # 1. דף ראשי - לוח כרטיסים פעילים
@@ -293,7 +322,9 @@ if choice == "🏠 דף ראשי - לוח כרטיסים פעילים":
 
         active_id = st.session_state.get("active_ticket_id")
 
-        for _, row in df_raw.iterrows():
+        # שימוש בפרגמנט (Fragment) לכל כרטיס מונע קפיצות בדף ומעדכן נקודתית
+        @st.fragment
+        def render_ticket_card(row, parts_list):
             wo_id = row['ticket_id']
             work_key = f"work_txt_{wo_id}"
             
@@ -307,7 +338,6 @@ if choice == "🏠 דף ראשי - לוח כרטיסים פעילים":
                 details_str += f" | גלגל: {row['wheel_size']}"
 
             title_str = f"🔧 כרטיס #{wo_id} | {row['cust_name']} ({row['cust_phone']}) - {details_str} | סטטוס: {row['raw_status']}"
-            
             is_expanded = (active_id == wo_id)
 
             with st.expander(title_str, expanded=is_expanded):
@@ -345,12 +375,9 @@ if choice == "🏠 דף ראשי - לוח כרטיסים פעילים":
                     st.markdown(f"👉 [לחץ כאן לשליחת ההודעה בוואטסאפ](https://wa.me/{clean_phone}?text={encoded_msg})", unsafe_allow_html=True)
 
                     st.markdown("---")
-                    st.button(
-                        "🗑️ נקה טיפול שנעשה",
-                        key=f"reset_btn_{wo_id}",
-                        on_click=handle_reset_work,
-                        args=(wo_id, work_key)
-                    )
+                    if st.button("🗑️ נקה טיפול שנעשה", key=f"reset_btn_{wo_id}"):
+                        handle_reset_work(wo_id, work_key)
+                        st.rerun()
 
                 with col_status:
                     st.markdown("**עדכון פרטי הטיפול, תאריכים וסטטוס:**")
@@ -387,12 +414,13 @@ if choice == "🏠 דף ראשי - לוח כרטיסים פעילים":
                     st.markdown("📦 **הוסף פריט מהמחירון לטיפול:**")
                     
                     part_sel_key = f"inline_part_{wo_id}"
-                    st.selectbox("בחר פריט:", parts_list, key=part_sel_key)
                     
-                    st.button(
-                        "➕ הוסף פריט לתיאור בלבד",
-                        key=f"btn_add_inline_{wo_id}",
-                        on_click=handle_add_part,
+                    # בחירת פריט שמוסיפה אותו מיד אוטומטית ברגע הבחירה (ללא כפתור נוסף)
+                    st.selectbox(
+                        "בחר פריט להוספה מיידית:",
+                        parts_list,
+                        key=part_sel_key,
+                        on_change=handle_select_part,
                         args=(wo_id, part_sel_key, work_key)
                     )
 
@@ -446,6 +474,9 @@ if choice == "🏠 דף ראשי - לוח כרטיסים פעילים":
                         del_conn.close()
                         st.success(f"כרטיס תיקון #{wo_id} נמחק בהצלחה!")
                         st.rerun()
+
+        for _, row in df_raw.iterrows():
+            render_ticket_card(row, parts_list)
     else:
         st.info("אין תיקונים תואמים להצגה לפי הסינון הנבחר. 🎉")
 

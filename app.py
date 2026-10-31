@@ -10,19 +10,15 @@ import shutil
 DB_FILE = "bike_shop.db"
 BACKUP_DIR = "backups"
 
-# אתחול שעות הגיבוי בברירת מחדל במידה ולא הוגדרו עדיין ב-session_state
 if "backup_hours" not in st.session_state:
     st.session_state["backup_hours"] = [12, 19]
 
-
 def auto_backup_db():
-    """יוצר גיבוי אוטומטי של מסד הנתונים בשעות שנבחרו על ידי המשתמש"""
     if os.path.exists(DB_FILE):
         os.makedirs(BACKUP_DIR, exist_ok=True)
         now = datetime.now()
         current_hour = now.hour
         today_str = now.strftime("%Y-%m-%d")
-
         active_hours = st.session_state.get("backup_hours", [12, 19])
 
         for target_hour in active_hours:
@@ -37,14 +33,11 @@ def auto_backup_db():
                     except Exception:
                         pass
 
-
 def get_connection():
     return sqlite3.connect(DB_FILE)
 
-
 def init_db():
     auto_backup_db()
-
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -138,35 +131,19 @@ def init_db():
     """)
 
     default_brands = [
-        "קנונדייל (Cannondale)",
-        "טרק (Trek)",
-        "ספשלייזד (Specialized)",
-        "ג'איינט (Giant)",
-        "סקוט (Scott)",
-        "סנטה קרוז (Santa Cruz)",
-        "מרידה (Merida)",
-        "קונה (Kona)",
-        "אורבאה (Orbea)",
-        "יטי (Yeti)",
-        "נורקו (Norco)",
-        "ברומפטון (Brompton)",
-        "ביאנקי (Bianchi)",
-        "סרבלו (Cervélo)",
-        "פינארלו (Pinarello)",
-        "קיוב (Cube)",
-        "קניון (Canyon)",
-        "פוקוס (Focus)"
+        "קנונדייל (Cannondale)", "טרק (Trek)", "ספשלייזד (Specialized)",
+        "ג'איינט (Giant)", "סקוט (Scott)", "סנטה קרוז (Santa Cruz)",
+        "מרידה (Merida)", "קונה (Kona)", "אורבאה (Orbea)", "יטי (Yeti)",
+        "נורקו (Norco)", "ברומפטון (Brompton)", "ביאנקי (Bianchi)",
+        "סרבלו (Cervélo)", "פינארלו (Pinarello)", "קיוב (Cube)",
+        "קניון (Canyon)", "פוקוס (Focus)"
     ]
 
     for brand in default_brands:
-        cursor.execute(
-            "INSERT OR IGNORE INTO bike_models (brand_model_name) VALUES (?)",
-            (brand,)
-        )
+        cursor.execute("INSERT OR IGNORE INTO bike_models (brand_model_name) VALUES (?)", (brand,))
 
     conn.commit()
     conn.close()
-
 
 init_db()
 
@@ -191,7 +168,7 @@ if open_msgs_count > 0:
     chat_menu_label = f"💬 צ'אט עובדים פנימי 🔴 ({open_msgs_count})"
 
 menu = [
-    "🏠 דף ראשי - תיקונים פתוחים",
+    "🏠 דף ראשי - לוח כרטיסים פעילים",
     "➕ קבלת תיקון / לקוח חדש",
     "👤 ניהול לקוחות והיסטוריה",
     "📦 מחירון חלפים ועבודות",
@@ -199,72 +176,90 @@ menu = [
 ]
 choice = st.sidebar.radio("תפריט ניווט", menu)
 
+# --- פונקציות Callback לעדכון תיאור העבודה בלבד (ללא נגיעה במחיר) ---
+def handle_add_part(wo_id, part_select_key, work_key):
+    st.session_state["active_ticket_id"] = wo_id
+
+    selected_val = st.session_state.get(part_select_key)
+    if selected_val and selected_val != "-- בחר פריט --":
+        parts_parts = selected_val.rsplit(" (₪", 1)
+        p_name = parts_parts[0]
+        p_price = float(parts_parts[1].replace(")", "")) if len(parts_parts) > 1 else 0.0
+
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT work_done FROM work_orders WHERE id = ?", (wo_id,))
+        row = cur.fetchone()
+        
+        old_work = st.session_state.get(work_key, row[0] or "")
+
+        if old_work.strip():
+            new_work = f"{old_work}\n• {p_name} (₪{p_price})"
+        else:
+            new_work = f"• {p_name} (₪{p_price})"
+
+        cur.execute("UPDATE work_orders SET work_done = ? WHERE id = ?", (new_work.strip(), wo_id))
+        conn.commit()
+        conn.close()
+
+        st.session_state[work_key] = new_work.strip()
+        st.success(f"הפריט '{p_name}' נוסף לתיאור העבודה בהצלחה!")
+
+def handle_reset_work(wo_id, work_key):
+    st.session_state["active_ticket_id"] = wo_id
+    st.session_state[work_key] = ""
+    
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE work_orders SET work_done = '' WHERE id = ?", (wo_id,))
+    conn.commit()
+    conn.close()
+    st.warning("תיאור העבודה נוקה!")
 
 # ==========================================
-# 1. דף ראשי - תיקונים פתוחים
+# 1. דף ראשי - לוח כרטיסים פעילים
 # ==========================================
-if choice == "🏠 דף ראשי - תיקונים פתוחים":
+if choice == "🏠 דף ראשי - לוח כרטיסים פעילים":
     st.title("📋 לוח תיקונים פעילים בסדנה")
-    st.caption("מציג את כל התיקונים הדורשים טיפול")
+    st.caption("ניהול מלא של הכרטיסים, סטטוסים, הוספת חלקים מהמחירון ושליחת וואטסאפ ללקוח")
 
     conn = get_connection()
-
     df_parts_avail = pd.read_sql_query("SELECT id, part_name, price FROM inventory ORDER BY part_name ASC", conn)
-    parts_dict = {}
-    if not df_parts_avail.empty:
-        for _, p_row in df_parts_avail.iterrows():
-            parts_dict[f"{p_row['part_name']} (₪{p_row['price']})"] = p_row
+    parts_list = ["-- בחר פריט --"] + [f"{p_row['part_name']} (₪{p_row['price']})" for _, p_row in df_parts_avail.iterrows()]
+    conn.close()
 
+    conn = get_connection()
     if search_query.strip():
-        q_pattern = f"%{search_query.strip()}%"
+        q_p = f"%{search_query.strip()}%"
         df_raw = pd.read_sql_query("""
             SELECT 
-                wo.id AS ticket_id,
-                c.id AS customer_id,
-                c.name AS cust_name,
-                c.phone AS cust_phone,
-                b.id AS bike_id,
-                b.brand_model AS bike_model,
-                b.wheel_size AS wheel_size,
-                b.color AS color,
-                wo.status AS raw_status,
-                wo.issue_description AS raw_issue,
-                wo.work_done AS raw_work_done,
-                wo.estimated_price AS est_price,
-                wo.final_price AS final_price,
-                wo.intake_date AS intake_date,
-                wo.completed_date AS completed_date
+                wo.id AS ticket_id, c.id AS customer_id, c.name AS cust_name, c.phone AS cust_phone,
+                b.id AS bike_id, b.brand_model AS bike_model, b.wheel_size AS wheel_size, b.color AS color,
+                wo.status AS raw_status, wo.issue_description AS raw_issue, wo.work_done AS raw_work_done,
+                wo.estimated_price AS est_price, wo.final_price AS final_price,
+                wo.intake_date AS intake_date, wo.completed_date AS completed_date
             FROM work_orders wo
             JOIN bikes b ON wo.bike_id = b.id
             JOIN customers c ON b.customer_id = c.id
             WHERE c.name LIKE ? OR c.phone LIKE ? OR wo.id LIKE ? OR b.brand_model LIKE ?
             ORDER BY wo.id DESC
-        """, conn, params=(q_pattern, q_pattern, q_pattern, q_pattern))
+        """, conn, params=(q_p, q_p, q_p, q_p))
         st.info(f"תוצאות חיפוש עבור: '{search_query.strip()}'")
     else:
         df_raw = pd.read_sql_query("""
             SELECT 
-                wo.id AS ticket_id,
-                c.id AS customer_id,
-                c.name AS cust_name,
-                c.phone AS cust_phone,
-                b.id AS bike_id,
-                b.brand_model AS bike_model,
-                b.wheel_size AS wheel_size,
-                b.color AS color,
-                wo.status AS raw_status,
-                wo.issue_description AS raw_issue,
-                wo.work_done AS raw_work_done,
-                wo.estimated_price AS est_price,
-                wo.final_price AS final_price,
-                wo.intake_date AS intake_date,
-                wo.completed_date AS completed_date
+                wo.id AS ticket_id, c.id AS customer_id, c.name AS cust_name, c.phone AS cust_phone,
+                b.id AS bike_id, b.brand_model AS bike_model, b.wheel_size AS wheel_size, b.color AS color,
+                wo.status AS raw_status, wo.issue_description AS raw_issue, wo.work_done AS raw_work_done,
+                wo.estimated_price AS est_price, wo.final_price AS final_price,
+                wo.intake_date AS intake_date, wo.completed_date AS completed_date
             FROM work_orders wo
             JOIN bikes b ON wo.bike_id = b.id
             JOIN customers c ON b.customer_id = c.id
             WHERE wo.status IN ('בטיפול', 'ממתין לחלקים', 'מוכן לאיסוף')
             ORDER BY wo.id DESC
         """, conn)
+    conn.close()
 
     in_service_count = len(df_raw[df_raw['raw_status'] == 'בטיפול']) if not df_raw.empty else 0
     waiting_parts_count = len(df_raw[df_raw['raw_status'] == 'ממתין לחלקים']) if not df_raw.empty else 0
@@ -294,10 +289,17 @@ if choice == "🏠 דף ראשי - תיקונים פתוחים":
     st.markdown("---")
 
     if not df_raw.empty:
-        st.subheader("🛠️ כרטיסי תיקון פעילים")
+        st.subheader("🛠️ כרטיסי תיקון פעילים בסדנה")
+
+        active_id = st.session_state.get("active_ticket_id")
 
         for _, row in df_raw.iterrows():
             wo_id = row['ticket_id']
+            work_key = f"work_txt_{wo_id}"
+            
+            if work_key not in st.session_state:
+                st.session_state[work_key] = str(row['raw_work_done'] or '')
+
             details_str = f"{row['bike_model']}"
             if row['color']:
                 details_str += f" | צבע: {row['color']}"
@@ -305,13 +307,17 @@ if choice == "🏠 דף ראשי - תיקונים פתוחים":
                 details_str += f" | גלגל: {row['wheel_size']}"
 
             title_str = f"🔧 כרטיס #{wo_id} | {row['cust_name']} ({row['cust_phone']}) - {details_str} | סטטוס: {row['raw_status']}"
-            with st.expander(title_str):
+            
+            is_expanded = (active_id == wo_id)
+
+            with st.expander(title_str, expanded=is_expanded):
                 col_info, col_status = st.columns([2, 1])
 
                 with col_info:
                     st.write(f"🛠️ **תקלה מדווחת (מהלקוח):** {row['raw_issue']}")
-                    st.write(f"⚙️ **טיפול שנעשה בפועל:** {row['raw_work_done'] or 'טרם הוזן'}")
+                    st.write(f"⚙️ **טיפול שנעשה בפועל:** {st.session_state[work_key] or 'טרם הוזן'}")
                     st.write(f"💰 **מחיר משוער בקבלה:** ₪{row['est_price'] or 0}")
+                    st.write(f"💵 **מחיר סופי נוכחי:** ₪{row['final_price'] or 0}")
 
                     st.markdown("---")
                     st.markdown("📱 **שליחת הודעת וואטסאפ ללקוח:**")
@@ -322,12 +328,7 @@ if choice == "🏠 דף ראשי - תיקונים פתוחים":
 
                     wa_template = st.selectbox(
                         "בחר תבנית הודעה:",
-                        [
-                            "🎉 האופניים מוכנים לאיסוף",
-                            "⚠️ דרוש אישור הצעת מחיר / חלק",
-                            "📦 עדכון: ממתין לחלקים",
-                            "💬 הודעה מותאמת אישית"
-                        ],
+                        ["🎉 האופניים מוכנים לאיסוף", "⚠️ דרוש אישור הצעת מחיר / חלק", "📦 עדכון: ממתין לחלקים", "💬 הודעה מותאמת אישית"],
                         key=f"wa_tpl_{wo_id}"
                     )
 
@@ -344,61 +345,12 @@ if choice == "🏠 דף ראשי - תיקונים פתוחים":
                     st.markdown(f"👉 [לחץ כאן לשליחת ההודעה בוואטסאפ](https://wa.me/{clean_phone}?text={encoded_msg})", unsafe_allow_html=True)
 
                     st.markdown("---")
-                    
-                    st.markdown("📦 **הוספת פריט מהמחירון לטיפול:**")
-                    if parts_dict:
-                        with st.form(key=f"add_part_form_{wo_id}"):
-                            selected_part_label = st.selectbox("בחר חלק/עבודה מהמחירון:", ["-- בחר פריט --"] + list(parts_dict.keys()), key=f"part_select_{wo_id}")
-                            btn_add_part = st.form_submit_button("➕ הוסף פריט לתיאור הטיפול")
-                            
-                            if btn_add_part:
-                                if selected_part_label != "-- בחר פריט --":
-                                    part_obj = parts_dict[selected_part_label]
-                                    p_name = part_obj['part_name']
-                                    p_price = part_obj['price']
-
-                                    existing_work = row['raw_work_done'] or ""
-                                    if existing_work.strip():
-                                        new_work_text = f"{existing_work}\n• {p_name} (₪{p_price})"
-                                    else:
-                                        new_work_text = f"• {p_name} (₪{p_price})"
-
-                                    cursor = conn.cursor()
-                                    cursor.execute(
-                                        "UPDATE work_orders SET work_done = ? WHERE id = ?",
-                                        (new_work_text.strip(), wo_id)
-                                    )
-                                    conn.commit()
-                                    st.success("הפריט נוסף לתיאור הטיפול בהצלחה!")
-                                    st.rerun()
-                                else:
-                                    st.warning("נא לבחור פריט תקין מהרשימה.")
-                    else:
-                        st.info("אין פריטים במחירון כרגע. הוסף פריטים דרך טאב 'מחירון חלפים ועבודות'.")
-
-                    st.markdown("---")
-                    with st.expander("✏️ ערוך פרטי לקוח / אופניים בכרטיס זה"):
-                        with st.form(key=f"edit_cust_bike_{wo_id}"):
-                            edit_name = st.text_input("שם לקוח:", value=str(row['cust_name']))
-                            edit_phone = st.text_input("מספר טלפון:", value=str(row['cust_phone']))
-                            edit_model = st.text_input("דגם אופניים:", value=str(row['bike_model']))
-                            edit_color = st.text_input("צבע:", value=str(row['color'] or ''))
-                            edit_wheel = st.text_input("גודל גלגל:", value=str(row['wheel_size'] or ''))
-                            
-                            btn_save_details = st.form_submit_button("💾 עדכן פרטים")
-                            if btn_save_details:
-                                cursor = conn.cursor()
-                                cursor.execute(
-                                    "UPDATE customers SET name = ?, phone = ? WHERE id = ?",
-                                    (edit_name.strip(), edit_phone.strip(), row['customer_id'])
-                                )
-                                cursor.execute(
-                                    "UPDATE bikes SET brand_model = ?, color = ?, wheel_size = ? WHERE id = ?",
-                                    (edit_model.strip(), edit_color.strip(), edit_wheel.strip(), row['bike_id'])
-                                )
-                                conn.commit()
-                                st.success("הפרטים עודכנו בהצלחה!")
-                                st.rerun()
+                    st.button(
+                        "🗑️ נקה טיפול שנעשה",
+                        key=f"reset_btn_{wo_id}",
+                        on_click=handle_reset_work,
+                        args=(wo_id, work_key)
+                    )
 
                 with col_status:
                     st.markdown("**עדכון פרטי הטיפול, תאריכים וסטטוס:**")
@@ -406,33 +358,14 @@ if choice == "🏠 דף ראשי - תיקונים פתוחים":
                     status_options = ["בטיפול", "ממתין לחלקים", "מוכן לאיסוף", "הושלם ונאסף", "בוטל"]
                     current_idx = status_options.index(row['raw_status']) if row['raw_status'] in status_options else 0
 
-                    if f"status_{wo_id}" not in st.session_state:
-                        st.session_state[f"status_{wo_id}"] = row['raw_status']
-                    if f"work_done_{wo_id}" not in st.session_state:
-                        st.session_state[f"work_done_{wo_id}"] = row['raw_work_done'] or ""
-                    if f"price_{wo_id}" not in st.session_state:
-                        init_price = float(row['final_price'] or 0.0)
-                        if init_price == 0.0 and row['est_price']:
-                            init_price = float(row['est_price'])
-                        st.session_state[f"price_{wo_id}"] = init_price
-
-                    new_status = st.selectbox(
-                        "סטטוס:",
-                        status_options,
-                        index=current_idx,
-                        key=f"status_{wo_id}"
-                    )
+                    new_status = st.selectbox("סטטוס:", status_options, index=current_idx, key=f"status_{wo_id}")
 
                     try:
                         parsed_intake = datetime.strptime(str(row['intake_date'])[:10], "%Y-%m-%d").date()
                     except Exception:
                         parsed_intake = date.today()
 
-                    new_intake_date = st.date_input(
-                        "📅 תאריך פתיחת טיפול:",
-                        value=parsed_intake,
-                        key=f"intake_date_{wo_id}"
-                    )
+                    new_intake_date = st.date_input("📅 תאריך פתיחת טיפול:", value=parsed_intake, key=f"intake_date_{wo_id}")
 
                     parsed_completed = None
                     if row['completed_date']:
@@ -442,64 +375,79 @@ if choice == "🏠 דף ראשי - תיקונים פתוחים":
                             parsed_completed = None
 
                     auto_comp_default = True if parsed_completed else (True if new_status in ["מוכן לאיסוף", "הושלם ונאסף"] else False)
-
-                    has_completed_date = st.checkbox(
-                        "הזן תאריך סיום טיפול",
-                        value=auto_comp_default,
-                        key=f"has_comp_{wo_id}"
-                    )
+                    has_completed_date = st.checkbox("הזן תאריך סיום טיפול", value=auto_comp_default, key=f"has_comp_{wo_id}")
 
                     new_completed_date_str = None
                     if has_completed_date:
                         comp_val = parsed_completed if parsed_completed else date.today()
-                        new_comp_date = st.date_input(
-                            "🏁 תאריך סיום טיפול:",
-                            value=comp_val,
-                            key=f"comp_date_{wo_id}"
-                        )
+                        new_comp_date = st.date_input("🏁 תאריך סיום טיפול:", value=comp_val, key=f"comp_date_{wo_id}")
                         new_completed_date_str = str(new_comp_date)
 
-                    new_work_done = st.text_area(
-                        "טיפול שנעשה בפועל:",
-                        key=f"work_done_{wo_id}",
-                        placeholder="רשום אילו חלקים הוחלפו / איזה תיקון בוצע..."
+                    st.markdown("---")
+                    st.markdown("📦 **הוסף פריט מהמחירון לטיפול:**")
+                    
+                    part_sel_key = f"inline_part_{wo_id}"
+                    st.selectbox("בחר פריט:", parts_list, key=part_sel_key)
+                    
+                    st.button(
+                        "➕ הוסף פריט לתיאור בלבד",
+                        key=f"btn_add_inline_{wo_id}",
+                        on_click=handle_add_part,
+                        args=(wo_id, part_sel_key, work_key)
                     )
 
-                    new_final_price = st.number_input(
-                        "מחיר סופי (₪):",
+                    updated_work_done = st.text_area(
+                        "טיפול שנעשה בפועל:",
+                        key=work_key,
+                        placeholder="רשום פירוט טיפולים וחלקים..."
+                    )
+
+                    current_final_val = float(row['final_price'] if row['final_price'] is not None else (row['est_price'] or 0.0))
+                    
+                    updated_price = st.number_input(
+                        "מחיר סופי (₪) - שליטה ידנית:",
                         min_value=0.0,
+                        value=current_final_val,
                         step=10.0,
-                        key=f"price_{wo_id}"
+                        key=f"num_price_{wo_id}"
                     )
 
                     st.markdown(" ")
-                    btn_save = st.button("💾 שמור שינויים", key=f"btn_save_{wo_id}")
-                    if btn_save:
-                        cursor = conn.cursor()
-                        
+                    if st.button("💾 שמור שינויים בכרטיס", key=f"btn_save_ticket_{wo_id}"):
+                        st.session_state["active_ticket_id"] = wo_id
+
+                        final_p_to_save = updated_price
+                        if not updated_work_done.strip():
+                            final_p_to_save = float(row['est_price'] or 0.0)
+
                         final_completed_str = new_completed_date_str
                         if new_status in ["מוכן לאיסוף", "הושלם ונאסף"] and not final_completed_str:
                             final_completed_str = str(date.today())
 
-                        cursor.execute(
+                        up_conn = get_connection()
+                        up_cursor = up_conn.cursor()
+                        up_cursor.execute(
                             "UPDATE work_orders SET status = ?, intake_date = ?, completed_date = ?, work_done = ?, final_price = ? WHERE id = ?",
-                            (new_status, str(new_intake_date), final_completed_str, new_work_done.strip(), new_final_price, wo_id)
+                            (new_status, str(new_intake_date), final_completed_str, updated_work_done.strip(), final_p_to_save, wo_id)
                         )
-                        conn.commit()
-                        st.success(f"כרטיס #{wo_id} עודכן בהצלחה!")
+                        up_conn.commit()
+                        up_conn.close()
+                        st.success(f"כרטיס #{wo_id} עודכן בהצלחה במחיר ₪{final_p_to_save}!")
                         st.rerun()
 
-                    if st.button("🗑️ מחק תיקון", key=f"btn_delete_wo_{wo_id}"):
-                        cursor = conn.cursor()
-                        cursor.execute("DELETE FROM work_orders WHERE id = ?", (wo_id,))
-                        conn.commit()
-                        st.warning(f"כרטיס תיקון #{wo_id} נמחק!")
+                    st.markdown("---")
+                    if st.button("🗑️ מחק כרטיס תיקון זה לצמיתות", key=f"btn_delete_wo_{wo_id}"):
+                        if st.session_state.get("active_ticket_id") == wo_id:
+                            st.session_state["active_ticket_id"] = None
+                        del_conn = get_connection()
+                        del_cursor = del_conn.cursor()
+                        del_cursor.execute("DELETE FROM work_orders WHERE id = ?", (wo_id,))
+                        del_conn.commit()
+                        del_conn.close()
+                        st.success(f"כרטיס תיקון #{wo_id} נמחק בהצלחה!")
                         st.rerun()
     else:
         st.info("אין תיקונים תואמים להצגה לפי הסינון הנבחר. 🎉")
-
-    conn.close()
-
 
 # ==========================================
 # 2. קבלת תיקון / לקוח חדש
@@ -513,14 +461,12 @@ elif choice == "➕ קבלת תיקון / לקוח חדש":
         del st.session_state["success_msg"]
 
     conn = get_connection()
-
     saved_models = pd.read_sql_query("SELECT brand_model_name FROM bike_models ORDER BY brand_model_name ASC", conn)["brand_model_name"].tolist()
     brands_dropdown = ["➕ להקליד חברה/דגם חדשים שלא ברשימה"] + saved_models
-
     existing_customers = pd.read_sql_query("SELECT id, name, phone FROM customers ORDER BY name ASC", conn)
+    conn.close()
 
     is_existing = st.checkbox("👤 הלקוח כבר רשום במערכת?")
-
     customer_id = None
     c_name = ""
     c_phone = ""
@@ -530,11 +476,9 @@ elif choice == "➕ קבלת תיקון / לקוח חדש":
         selected_cust_label = st.selectbox("בחר לקוח קיים מהרשימה:", list(cust_options.keys()))
         customer_id = cust_options[selected_cust_label]
 
-        df_cust_bikes = pd.read_sql_query(
-            "SELECT id, brand_model, wheel_size, color FROM bikes WHERE customer_id = ?",
-            conn,
-            params=(customer_id,)
-        )
+        conn_b = get_connection()
+        df_cust_bikes = pd.read_sql_query("SELECT id, brand_model, wheel_size, color FROM bikes WHERE customer_id = ?", conn_b, params=(customer_id,))
+        conn_b.close()
 
         bike_choice_options = ["➕ הוסף זוג אופניים חדש ללקוח זה"]
         bike_map = {}
@@ -571,11 +515,7 @@ elif choice == "➕ קבלת תיקון / לקוח חדש":
         else:
             st.subheader("🚲 פרטי האופניים החדשים")
             selected_brand = st.selectbox("חברה / דגם מתוך הרשימה הקיימת:", brands_dropdown)
-
-            new_brand_model_input = st.text_input(
-                "הקלד חברה/דגם חדשים (או תוספת דגם):",
-                placeholder="למשל: Yeti SB140 / Cannondale Topstone 1"
-            )
+            new_brand_model_input = st.text_input("הקלד חברה/דגם חדשים (או תוספת דגם):", placeholder="למשל: Yeti SB140 / Cannondale Topstone 1")
 
             col_spec1, col_spec2, col_spec3 = st.columns(3)
             with col_spec1:
@@ -590,7 +530,6 @@ elif choice == "➕ קבלת תיקון / לקוח חדש":
         st.subheader("🛠️ הבעיה והטיפול")
         
         intake_date_input = st.date_input("📅 תאריך פתיחת טיפול:", value=date.today())
-        
         issue_desc = st.text_area("תקלה מדווחת (על מה הלקוח מתלונן?) *", placeholder="למשל: רעשים מהפדלים, שרשרת קופצת...")
         work_done_initial = st.text_area("טיפול שנעשה בפועל (אופציונלי):", placeholder="הערות טכניות / עבודה שבוצעה...")
         est_price = st.number_input("הערכת מחיר ראשונית ב-₪:", min_value=0.0, step=10.0)
@@ -603,7 +542,8 @@ elif choice == "➕ קבלת תיקון / לקוח חדש":
             elif not issue_desc.strip():
                 st.error("חובה להזין את תיאור התקלה!")
             else:
-                cursor = conn.cursor()
+                ins_conn = get_connection()
+                cursor = ins_conn.cursor()
 
                 if not is_existing:
                     cursor.execute("INSERT INTO customers (name, phone) VALUES (?, ?)", (c_name.strip(), c_phone.strip()))
@@ -636,12 +576,10 @@ elif choice == "➕ קבלת תיקון / לקוח חדש":
                     (bike_id, str(intake_date_input), issue_desc.strip(), work_done_initial.strip(), est_price, est_price)
                 )
 
-                conn.commit()
+                ins_conn.commit()
+                ins_conn.close()
                 st.session_state["success_msg"] = f"🎉 כרטיס נפתח בהצלחה עבור '{final_bike_name}'! הטופס מוכן ללקוח הבא."
                 st.rerun()
-
-    conn.close()
-
 
 # ==========================================
 # 3. ניהול לקוחות והיסטוריה
@@ -651,6 +589,7 @@ elif choice == "👤 ניהול לקוחות והיסטוריה":
 
     conn = get_connection()
     df_customers = pd.read_sql_query("SELECT * FROM customers", conn)
+    conn.close()
 
     if df_customers.empty:
         st.info("אין לקוחות במערכת עדיין.")
@@ -671,13 +610,12 @@ elif choice == "👤 ניהול לקוחות והיסטוריה":
                 up_notes = st.text_area("הערות על הלקוח:", value=str(cust_info.get('notes') or ''))
 
                 if st.form_submit_button("💾 שמור שינויי לקוח"):
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        "UPDATE customers SET name = ?, phone = ?, email = ?, notes = ? WHERE id = ?",
-                        (up_name.strip(), up_phone.strip(), up_email.strip(), up_notes.strip(), selected_cust_id)
-                    )
-                    conn.commit()
-                    st.success("פרטי הלקוח עודכנו בהצלחה במערכת!")
+                    upc_conn = get_connection()
+                    upc_cursor = upc_conn.cursor()
+                    upc_cursor.execute("UPDATE customers SET name = ?, phone = ?, email = ?, notes = ? WHERE id = ?", (up_name.strip(), up_phone.strip(), up_email.strip(), up_notes.strip(), selected_cust_id))
+                    upc_conn.commit()
+                    upc_conn.close()
+                    st.success("פרטי הלקוח עודכנו בהצלחה!")
                     st.rerun()
 
         col_c1, col_c2, col_del = st.columns([2, 2, 1])
@@ -686,21 +624,21 @@ elif choice == "👤 ניהול לקוחות והיסטוריה":
 
         with col_del:
             if st.button("🗑️ מחק לקוח זה", key=f"del_cust_{selected_cust_id}"):
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM work_orders WHERE bike_id IN (SELECT id FROM bikes WHERE customer_id = ?)", (selected_cust_id,))
-                cursor.execute("DELETE FROM bikes WHERE customer_id = ?", (selected_cust_id,))
-                cursor.execute("DELETE FROM customers WHERE id = ?", (selected_cust_id,))
-                conn.commit()
-                st.warning(f"הלקוח {cust_info['name']} וכל הנתונים המשויכים נמחקו בהצלחה!")
+                delc_conn = get_connection()
+                delc_cursor = delc_conn.cursor()
+                delc_cursor.execute("DELETE FROM work_orders WHERE bike_id IN (SELECT id FROM bikes WHERE customer_id = ?)", (selected_cust_id,))
+                delc_cursor.execute("DELETE FROM bikes WHERE customer_id = ?", (selected_cust_id,))
+                delc_cursor.execute("DELETE FROM customers WHERE id = ?", (selected_cust_id,))
+                delc_conn.commit()
+                delc_conn.close()
+                st.warning(f"הלקוח {cust_info['name']} וכל הנתונים המשויכים נמחקו!")
                 st.rerun()
 
         st.markdown("---")
         st.subheader(f"🚲 אופניים הרשומים על שם {cust_info['name']}")
-        df_cust_bikes_all = pd.read_sql_query(
-            "SELECT brand_model AS דגם, wheel_size AS גודל_גלגל, color AS צבע, frame_serial AS מספר_שלדה FROM bikes WHERE customer_id = ?",
-            conn,
-            params=(selected_cust_id,)
-        )
+        conn_bks = get_connection()
+        df_cust_bikes_all = pd.read_sql_query("SELECT brand_model AS דגם, wheel_size AS גודל_גלגל, color AS צבע, frame_serial AS מספר_שלדה FROM bikes WHERE customer_id = ?", conn_bks, params=(selected_cust_id,))
+        conn_bks.close()
         if not df_cust_bikes_all.empty:
             st.dataframe(df_cust_bikes_all, use_container_width=True)
         else:
@@ -709,48 +647,38 @@ elif choice == "👤 ניהול לקוחות והיסטוריה":
         st.markdown("---")
         st.subheader(f"📜 היסטוריית תיקונים עבור {cust_info['name']}")
 
+        conn_hst = get_connection()
         df_history = pd.read_sql_query("""
             SELECT 
-                wo.id AS מס_כרטיס,
-                wo.intake_date AS תאריך_פתיחת_טיפול,
-                wo.completed_date AS תאריך_סיום_טיפול,
-                b.brand_model AS אופניים,
-                b.wheel_size AS גודל_גלגל,
-                b.color AS צבע,
-                b.frame_serial AS מספר_שלדה,
-                wo.issue_description AS תקלה_מדווחת,
-                wo.work_done AS טיפול_שנעשה,
-                wo.status AS סטטוס,
-                wo.estimated_price AS מחיר_משוער,
-                wo.final_price AS מחיר_סופי
+                wo.id AS מס_כרטיס, wo.intake_date AS תאריך_פתיחת_טיפול, wo.completed_date AS תאריך_סיום_טיפול,
+                b.brand_model AS אופניים, b.wheel_size AS גודל_גלגל, b.color AS צבע, b.frame_serial AS מספר_שלדה,
+                wo.issue_description AS תקלה_מדווחת, wo.work_done AS טיפול_שנעשה, wo.status AS סטטוס,
+                wo.estimated_price AS מחיר_משוער, wo.final_price AS מחיר_סופי
             FROM work_orders wo
             JOIN bikes b ON wo.bike_id = b.id
             WHERE b.customer_id = ?
             ORDER BY wo.id DESC
-        """, conn, params=(selected_cust_id,))
+        """, conn_hst, params=(selected_cust_id,))
+        conn_hst.close()
 
         if not df_history.empty:
             st.dataframe(df_history, use_container_width=True)
         else:
             st.info("ללקוח זה אין היסטוריית תיקונים עדיין.")
 
-    conn.close()
-
-
 # ==========================================
 # 4. מחירון חלפים ועבודות
 # ==========================================
 elif choice == "📦 מחירון חלפים ועבודות":
     st.title("📦 מחירון חלפים ותעריפי עבודה")
-    st.caption("ניהול רשימת החלקים והשירותים להוספה מהירה לכרטיסי התיקון")
+    st.caption("ניהול רשימת החלקים והשירותים")
 
     conn = get_connection()
-
     with st.expander("➕ הוסף חלק או שירות חדש למחירון"):
         with st.form("add_inventory_form", clear_on_submit=True):
             col_i1, col_i2 = st.columns(2)
             with col_i1:
-                inv_name = st.text_input("שם החלק או העבודה *", placeholder="למשל: פנימית 29, כיוון הילוכים, שרשרת 12")
+                inv_name = st.text_input("שם החלק או העבודה *", placeholder="למשל: פנימית 29, כיוון הילוכים...")
             with col_i2:
                 inv_price = st.number_input("מחיר (₪) *", min_value=0.0, step=5.0)
             
@@ -762,21 +690,17 @@ elif choice == "📦 מחירון חלפים ועבודות":
                     st.error("חובה להזין את שם החלק או העבודה!")
                 else:
                     cursor = conn.cursor()
-                    cursor.execute(
-                        "INSERT INTO inventory (part_name, price, notes) VALUES (?, ?, ?)",
-                        (inv_name.strip(), inv_price, inv_notes.strip())
-                    )
+                    cursor.execute("INSERT INTO inventory (part_name, price, notes) VALUES (?, ?, ?)", (inv_name.strip(), inv_price, inv_notes.strip()))
                     conn.commit()
-                    st.success(f"הפריט '{inv_name}' נוסף למחירון בהצלחה!")
+                    st.success(f"הפריט '{inv_name}' נוסף למחירון!")
                     st.rerun()
 
     st.markdown("---")
-
     df_inv = pd.read_sql_query("SELECT id, part_name AS שם_פריט, price AS מחיר, notes AS הערות FROM inventory ORDER BY part_name ASC", conn)
+    conn.close()
 
     if not df_inv.empty:
         st.subheader("📋 רשימת פריטים קיימים במחירון")
-
         for _, inv_row in df_inv.iterrows():
             i_id = inv_row['id']
             i_name = inv_row['שם_פריט']
@@ -790,26 +714,24 @@ elif choice == "📦 מחירון חלפים ועבודות":
                     e_notes = st.text_input("הערות:", value=str(i_notes or ''))
 
                     if st.form_submit_button("💾 שמור שינויים במחירון"):
-                        cursor = conn.cursor()
-                        cursor.execute(
-                            "UPDATE inventory SET part_name = ?, price = ?, notes = ? WHERE id = ?",
-                            (e_name.strip(), e_price, e_notes.strip(), i_id)
-                        )
-                        conn.commit()
-                        st.success("המחירון עודכן בהצלחה!")
+                        inv_conn = get_connection()
+                        inv_cursor = inv_conn.cursor()
+                        inv_cursor.execute("UPDATE inventory SET part_name = ?, price = ?, notes = ? WHERE id = ?", (e_name.strip(), e_price, e_notes.strip(), i_id))
+                        inv_conn.commit()
+                        inv_conn.close()
+                        st.success("המחירון עודכן!")
                         st.rerun()
 
                 if st.button("🗑️ מחק פריט מהמחירון", key=f"del_inv_{i_id}"):
-                    cursor = conn.cursor()
-                    cursor.execute("DELETE FROM inventory WHERE id = ?", (i_id,))
-                    conn.commit()
-                    st.warning(f"הפריט '{i_name}' נמחק מהמחירון!")
+                    dli_conn = get_connection()
+                    dli_cursor = dli_conn.cursor()
+                    dli_cursor.execute("DELETE FROM inventory WHERE id = ?", (i_id,))
+                    dli_conn.commit()
+                    dli_conn.close()
+                    st.warning(f"הפריט '{i_name}' נמחק!")
                     st.rerun()
     else:
-        st.info("אין עדיין פריטים במחירון. השתמש בטופס למעלה כדי להתחיל להוסיף.")
-
-    conn.close()
-
+        st.info("אין עדיין פריטים במחירון.")
 
 # ==========================================
 # 5. צ'אט עובדים פנימי
@@ -818,7 +740,6 @@ elif choice.startswith("💬 צ'אט עובדים פנימי"):
     st.title("💬 לוח הודעות ותקשורת צוות")
 
     conn = get_connection()
-
     col_chat1, col_chat2 = st.columns([1, 2])
 
     with col_chat1:
@@ -832,18 +753,18 @@ elif choice.startswith("💬 צ'אט עובדים פנימי"):
                 cursor = conn.cursor()
                 cursor.execute("INSERT INTO staff_messages (sender_name, message, status) VALUES (?, ?, 'פתוח')", (sender, message))
                 conn.commit()
-                st.success("ההודעה נשלחה בהצלחה!")
+                st.success("ההודעה נשלחה!")
                 st.rerun()
 
     with col_chat2:
         st.subheader("📢 מעקב הודעות צוות")
-
         show_filter = st.radio("סינון הודעות:", ["הצג הודעות פתוחות בלבד", "הצג את כל ההודעות (כולל שטופלו)"], horizontal=True)
 
         if show_filter == "הצג הודעות פתוחות בלבד":
             df_msgs = pd.read_sql_query("SELECT id, sender_name, message, status, created_at FROM staff_messages WHERE status = 'פתוח' ORDER BY id DESC", conn)
         else:
             df_msgs = pd.read_sql_query("SELECT id, sender_name, message, status, created_at FROM staff_messages ORDER BY id DESC", conn)
+        conn.close()
 
         if not df_msgs.empty:
             for _, r in df_msgs.iterrows():
@@ -857,36 +778,32 @@ elif choice.startswith("💬 צ'אט עובדים פנימי"):
                     c_btn1, c_btn2 = st.columns(2)
                     with c_btn1:
                         if r['status'] == 'פתוח' and st.button("✅ סמן כטופל", key=f"resolve_{r['id']}"):
-                            cursor = conn.cursor()
-                            cursor.execute("UPDATE staff_messages SET status = 'טופל' WHERE id = ?", (r['id'],))
-                            conn.commit()
+                            msg_conn = get_connection()
+                            msg_cursor = msg_conn.cursor()
+                            msg_cursor.execute("UPDATE staff_messages SET status = 'טופל' WHERE id = ?", (r['id'],))
+                            msg_conn.commit()
+                            msg_conn.close()
                             st.rerun()
                     with c_btn2:
                         if r['status'] == 'טופל' and st.button("🔄 פתח מחדש", key=f"reopen_{r['id']}"):
-                            cursor = conn.cursor()
-                            cursor.execute("UPDATE staff_messages SET status = 'פתוח' WHERE id = ?", (r['id'],))
-                            conn.commit()
+                            msg_conn = get_connection()
+                            msg_cursor = msg_conn.cursor()
+                            msg_cursor.execute("UPDATE staff_messages SET status = 'פתוח' WHERE id = ?", (r['id'],))
+                            msg_conn.commit()
+                            msg_conn.close()
                             st.rerun()
         else:
             st.info("אין הודעות להצגה כרגע.")
-
-    conn.close()
 
 # --- הגדרות וכפתורי גיבוי בתפריט הצד ---
 st.sidebar.markdown("---")
 st.sidebar.header("💾 גיבוי נתונים")
 
-# תפריט מותאם אישית לבחירת שעות הגיבוי האוטומטי
 with st.sidebar.expander("⚙️ הגדרות גיבוי אוטומטי"):
     hour_options = [f"{h:02d}:00" for h in range(24)]
     current_selected_hours = [f"{h:02d}:00" for h in st.session_state["backup_hours"]]
 
-    selected_hour_strings = st.multiselect(
-        "בחר שעות לגיבוי אוטומטי ביום:",
-        options=hour_options,
-        default=current_selected_hours
-    )
-
+    selected_hour_strings = st.multiselect("בחר שעות לגיבוי אוטומטי ביום:", options=hour_options, default=current_selected_hours)
     new_hours = sorted([int(h.split(":")[0]) for h in selected_hour_strings])
     if new_hours != st.session_state["backup_hours"]:
         st.session_state["backup_hours"] = new_hours
@@ -896,7 +813,6 @@ if os.path.exists(DB_FILE):
     with open(DB_FILE, "rb") as fp:
         now_str = dt_module.datetime.now().strftime("%Y-%m-%d_%H-%M")
         backup_name = f"bike_shop_backup_{now_str}.db"
-
         st.sidebar.download_button(
             label="📥 הורד גיבוי מסד נתונים ידני",
             data=fp,

@@ -149,7 +149,7 @@ init_db()
 
 st.set_page_config(page_title="ניהול חנות אופניים", layout="wide")
 
-# --- CSS בסיסי ונייטרלי שמתאים למובייל בלי לשבור מילים ---
+# --- CSS נקי ומותאם למובייל ולמחשב ---
 st.markdown("""
     <style>
     input[type="text"], textarea {
@@ -796,8 +796,6 @@ elif choice.startswith("💬 צ'אט עובדים פנימי"):
                         if r['status'] == 'טופל' and st.button("🔄 פתח מחדש", key=f"reopen_{r['id']}"):
                             msg_conn = get_connection()
                             msg_cursor = msg_conn.cursor()
-                            msg_cursor.execute("UPDATE staff_messages SET status = 'פתוח' WHERE id = ?", (r['id'],))
-                            msg_conn.commit()
                             msg_conn.close()
                             st.rerun()
         else:

@@ -149,28 +149,26 @@ init_db()
 
 st.set_page_config(page_title="ניהול חנות אופניים", layout="wide")
 
-# --- הזרקת עיצוב CSS לעברית (RTL), יישור לימין ויישור טקסט בתיבות ---
+# --- הזרקת עיצוב CSS מתוקן למובייל (מונע את שבירת המילים) ---
 st.markdown("""
     <style>
-    /* כיוון כללי מימין לשמאל */
+    /* כיוון כללי מימין לשמאל עם שמירה על תקינות הטקסט במובייל */
     .stApp {
         direction: RTL;
         text-align: right;
+        unicode-bidi: plaintext;
     }
     
-    /* יישור תפריט צד מימין לשמאל */
     section[data-testid="stSidebar"] {
         direction: RTL;
         text-align: right;
     }
 
-    /* יישור טקסט בתיבות טקסט רגילות ובטקסט-אריאה לימין */
     input[type="text"], textarea {
         text-align: right !important;
         direction: RTL !important;
     }
     
-    /* תמיכה ביישור תוויות ותפריטים */
     label {
         direction: RTL !important;
         text-align: right !important;
@@ -205,7 +203,6 @@ menu = [
 ]
 choice = st.sidebar.radio("תפריט ניווט", menu)
 
-# --- פונקציית Callback להוספת פריט אוטומטית ברגע בחירה מהתפריט ---
 def handle_select_part(wo_id, part_select_key, work_key):
     st.session_state["active_ticket_id"] = wo_id
     selected_val = st.session_state.get(part_select_key)
@@ -232,7 +229,6 @@ def handle_select_part(wo_id, part_select_key, work_key):
         conn.close()
 
         st.session_state[work_key] = new_work.strip()
-        # איפוס הבחירה חזרה לברירת המחדל
         st.session_state[part_select_key] = "-- בחר פריט --"
 
 def handle_reset_work(wo_id, work_key):
@@ -322,7 +318,6 @@ if choice == "🏠 דף ראשי - לוח כרטיסים פעילים":
 
         active_id = st.session_state.get("active_ticket_id")
 
-        # שימוש בפרגמנט (Fragment) לכל כרטיס מונע קפיצות בדף ומעדכן נקודתית
         @st.fragment
         def render_ticket_card(row, parts_list):
             wo_id = row['ticket_id']
@@ -415,7 +410,6 @@ if choice == "🏠 דף ראשי - לוח כרטיסים פעילים":
                     
                     part_sel_key = f"inline_part_{wo_id}"
                     
-                    # בחירת פריט שמוסיפה אותו מיד אוטומטית ברגע הבחירה (ללא כפתור נוסף)
                     st.selectbox(
                         "בחר פריט להוספה מיידית:",
                         parts_list,

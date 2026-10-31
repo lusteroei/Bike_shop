@@ -149,10 +149,9 @@ init_db()
 
 st.set_page_config(page_title="ניהול חנות אופניים", layout="wide")
 
-# --- הזרקת עיצוב CSS מתוקן למובייל (מונע את שבירת המילים) ---
+# --- הזרקת עיצוב CSS מתוקן למובייל וליישור מימין לשמאל ---
 st.markdown("""
     <style>
-    /* כיוון כללי מימין לשמאל עם שמירה על תקינות הטקסט במובייל */
     .stApp {
         direction: RTL;
         text-align: right;

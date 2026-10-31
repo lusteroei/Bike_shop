@@ -149,28 +149,25 @@ init_db()
 
 st.set_page_config(page_title="ניהול חנות אופניים", layout="wide")
 
-# --- הזרקת עיצוב CSS מתוקן למובייל וליישור מימין לשמאל ---
+# --- CSS מתקדם שמונע שבירת מילים בנייד ושומר על יישור לימין ---
 st.markdown("""
     <style>
-    .stApp {
-        direction: RTL;
+    /* הגדרת יישור טקסט נקי בלי לפגוע בזרימת התווים במובייל */
+    .stMarkdown, p, span, div, label {
         text-align: right;
-        unicode-bidi: plaintext;
+        direction: rtl;
     }
     
-    section[data-testid="stSidebar"] {
-        direction: RTL;
-        text-align: right;
-    }
-
     input[type="text"], textarea {
         text-align: right !important;
-        direction: RTL !important;
+        direction: rtl !important;
     }
     
-    label {
-        direction: RTL !important;
-        text-align: right !important;
+    /* תיקון תצוגה במסכי מובייל צרים */
+    @media (max-width: 768px) {
+        .stApp {
+            direction: rtl;
+        }
     }
     </style>
 """, unsafe_allow_html=True)

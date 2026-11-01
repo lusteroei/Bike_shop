@@ -186,15 +186,26 @@ chat_menu_label = "💬 צ'אט עובדים פנימי"
 if open_msgs_count > 0:
     chat_menu_label = f"💬 צ'אט עובדים פנימי 🔴 ({open_msgs_count})"
 
+NAV_DASHBOARD = "🏠 דף ראשי - לוח כרטיסים פעילים"
+NAV_NEW_INTAKE = "➕ קבלת תיקון / לקוח חדש"
+NAV_CUSTOMERS = "👤 ניהול לקוחות והיסטוריה"
+NAV_INVENTORY = "📦 מחירון חלפים ועבודות"
+NAV_CHAT = chat_menu_label
+NAV_BACKUP = "🔄 שחזור גיבויים אוטומטיים"
+
 menu = [
-    "🏠 דף ראשי - לוח כרטיסים פעילים",
-    "➕ קבלת תיקון / לקוח חדש",
-    "👤 ניהול לקוחות והיסטוריה",
-    "📦 מחירון חלפים ועבודות",
-    chat_menu_label,
-    "🔄 שחזור גיבויים אוטומטיים"
+    NAV_DASHBOARD,
+    NAV_NEW_INTAKE,
+    NAV_CUSTOMERS,
+    NAV_INVENTORY,
+    NAV_CHAT,
+    NAV_BACKUP
 ]
-choice = st.sidebar.radio("תפריט ניווט", menu)
+
+if "selected_menu" not in st.session_state:
+    st.session_state["selected_menu"] = NAV_DASHBOARD
+
+choice = st.sidebar.radio("תפריט ניווט", menu, key="selected_menu")
 
 def handle_select_part(wo_id, part_select_key, work_key):
     st.session_state["active_ticket_id"] = wo_id
@@ -237,7 +248,7 @@ def handle_reset_work(wo_id, work_key):
 # ==========================================
 # 1. דף ראשי - לוח כרטיסים פעילים
 # ==========================================
-if choice == "🏠 דף ראשי - לוח כרטיסים פעילים":
+if choice == NAV_DASHBOARD:
     st.title("📋 לוח תיקונים פעילים בסדנה")
     st.caption("ניהול מלא של הכרטיסים, סטטוסים, הוספת חלקים מהמחירון ושליחת וואטסאפ ללקוח")
 
@@ -516,7 +527,7 @@ if choice == "🏠 דף ראשי - לוח כרטיסים פעילים":
 # ==========================================
 # 2. קבלת תיקון / לקוח חדש
 # ==========================================
-elif choice == "➕ קבלת תיקון / לקוח חדש":
+elif choice == NAV_NEW_INTAKE:
     st.title("📝 טופס קבלת אופניים ותיקון חדש")
     st.caption("הזן את כל הפרטים במקום אחד - הלקוח, האופניים והבעיה")
 
@@ -596,7 +607,7 @@ elif choice == "➕ קבלת תיקון / לקוח חדש":
         
         intake_date_input = st.date_input("📅 תאריך פתיחת טיפול:", value=date.today())
         issue_desc = st.text_area("תקלה מדווחת (על מה הלקוח מתלונן?) *", placeholder="למשל: רעשים מהפדלים, שרשרת קופצת...")
-        work_done_initial = st.text_area("טיפול שנעשה בפועל (אופציונלי):", placeholder="הערות טכניות / עבודה שבוצעה...", placeholder_visibility="visible")
+        work_done_initial = st.text_area("טיפול שנעשה בפועל (אופציונלי):", placeholder="הערות טכניות / עבודה שבוצעה...")
         est_price = st.number_input("הערכת מחיר ראשונית ב-₪:", min_value=0.0, step=10.0)
 
         submit_intake = st.form_submit_button("🚀 שמור ופתח כרטיס תיקון", type="primary")
@@ -642,13 +653,15 @@ elif choice == "➕ קבלת תיקון / לקוח חדש":
 
                 ins_conn.commit()
                 ins_conn.close()
-                st.session_state["success_msg"] = f"🎉 כרטיס נפתח בהצלחה! הטופס מוכן ללקוח הבא."
+
+                st.session_state["selected_menu"] = NAV_DASHBOARD
+                st.session_state["success_msg"] = f"🎉 כרטיס נפתח בהצלחה!"
                 st.rerun()
 
 # ==========================================
 # 3. ניהול לקוחות והיסטוריה
 # ==========================================
-elif choice == "👤 ניהול לקוחות והיסטוריה":
+elif choice == NAV_CUSTOMERS:
     st.title("👤 ניהול לקוחות והיסטוריית טיפולים")
 
     conn = get_connection()
@@ -733,7 +746,7 @@ elif choice == "👤 ניהול לקוחות והיסטוריה":
 # ==========================================
 # 4. מחירון חלפים ועבודות
 # ==========================================
-elif choice == "📦 מחירון חלפים ועבודות":
+elif choice == NAV_INVENTORY:
     st.title("📦 מחירון חלפים ותעריפי עבודה")
     st.caption("ניהול רשימת החלקים והשירותים")
 
@@ -802,7 +815,7 @@ elif choice == "📦 מחירון חלפים ועבודות":
 # ==========================================
 # 5. צ'אט עובדים פנימי
 # ==========================================
-elif choice == chat_menu_label:
+elif choice == NAV_CHAT:
     st.title("💬 צ'אט עובדים פנימי לסדנה")
     st.caption("הודעות והערות צוות בין משמרות (למשל: אופניים שצריכים תשומת לב מיוחדת, רכיבי קסטה שהוזמנו וכדומה)")
 
@@ -823,7 +836,7 @@ elif choice == chat_menu_label:
                 st.rerun()
 
     st.markdown("---")
-    st.subheader("📜 הודעות צוות פעורות / היסטוריה")
+    st.subheader("📜 הודעות צוות פתוחות / היסטוריה")
 
     m_conn = get_connection()
     df_msgs = pd.read_sql_query("SELECT id, sender_name, message, status, created_at FROM staff_messages ORDER BY id DESC", m_conn)
@@ -873,7 +886,7 @@ elif choice == chat_menu_label:
 # ==========================================
 # 6. שחזור גיבויים אוטומטיים
 # ==========================================
-elif choice == "🔄 שחזור גיבויים אוטומטיים":
+elif choice == NAV_BACKUP:
     st.title("🔄 שחזור מסד נתונים מגיבוי אוטומטי")
     st.warning("⚠️ שחזור גיבוי יחליף את מסד הנתונים הנוכחי במצב שהיה בזמן שנוצר הגיבוי. מומלץ להוריד קודם גיבוי ידני של המצב הנוכחי למקרה הצורך.")
     

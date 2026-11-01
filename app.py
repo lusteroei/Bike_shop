@@ -477,8 +477,6 @@ elif choice == "➕ קבלת תיקון / לקוח חדש":
 
     is_existing = st.checkbox("👤 הלקוח כבר רשום במערכת?")
     customer_id = None
-    c_name = ""
-    c_phone = ""
 
     if is_existing and not existing_customers.empty:
         cust_options = {f"{r['name']} ({r['phone']})": r['id'] for _, r in existing_customers.iterrows()}
@@ -504,88 +502,96 @@ elif choice == "➕ קבלת תיקון / לקוח חדש":
     else:
         selected_existing_bike = "➕ הוסף זוג אופניים חדש ללקוח זה"
 
-    # הסרת st.form כדי ששדות הטקסט יתעדכנו וישמרו באופן מיידי בלי בעיות הקלדה של Enter
-    if not is_existing:
-        col_c1, col_c2 = st.columns(2)
-        with col_c1:
-            c_name = st.text_input("שם מלא של הלקוח *", key="input_c_name")
-        with col_c2:
-            c_phone = st.text_input("מספר טלפון *", key="input_c_phone")
+    with st.form("quick_intake_form", clear_on_submit=True):
+        c_name = ""
+        c_phone = ""
+        if not is_existing:
+            col_c1, col_c2 = st.columns(2)
+            with col_c1:
+                c_name = st.text_input("שם מלא של הלקוח *")
+            with col_c2:
+                c_phone = st.text_input("מספר טלפון *")
 
-    st.markdown("---")
-    
-    if is_existing and selected_existing_bike != "➕ הוסף זוג אופניים חדש ללקוח זה":
-        st.info(f"נבחרו האופניים השמורים: **{selected_existing_bike}**")
-        final_bike_name = selected_existing_bike
-        wheel_size_select = None
-        color_input = ""
-        frame_serial = ""
-    else:
-        st.subheader("🚲 פרטי האופניים החדשים")
+        st.markdown("---")
         
-        # שימוש בשדה נקי שלא תלוי בלחיצת Enter בתוך טופס
-        new_bike_brand_input = st.text_input("שם חברה / דגם אופניים *", placeholder="הקלד שם חברה או דגם (למשל: Trinks, Trek, Specialiezed...)", key="input_bike_brand")
-
-        col_spec1, col_spec2, col_spec3 = st.columns(3)
-        with col_spec1:
-            wheel_size_options = ['29"', '27.5"', '26"', "700c", '24"', '20"', '16"', "אחר"]
-            wheel_size_select = st.selectbox("גודל גלגל:", wheel_size_options, key="input_wheel_size")
-        with col_spec2:
-            color_input = st.text_input("צבע האופניים:", placeholder="למשל: שחור מט / אדום", key="input_color")
-        with col_spec3:
-            frame_serial = st.text_input("מספר שלדה (אופציונלי):", key="input_frame_serial")
-
-    st.markdown("---")
-    st.subheader("🛠️ הבעיה והטיפול")
-    
-    intake_date_input = st.date_input("📅 תאריך פתיחת טיפול:", value=date.today(), key="input_intake_date")
-    issue_desc = st.text_area("תקלה מדווחת (על מה הלקוח מתלונן?) *", placeholder="למשל: רעשים מהפדלים, שרשרת קופצת...", key="input_issue_desc")
-    work_done_initial = st.text_area("טיפול שנעשה בפועל (אופציונלי):", placeholder="הערות טכניות / עבודה שבוצעה...", key="input_work_done")
-    est_price = st.number_input("הערכת מחיר ראשונית ב-₪:", min_value=0.0, step=10.0, key="input_est_price")
-
-    submit_intake = st.button("🚀 שמור ופתח כרטיס תיקון", type="primary")
-
-    if submit_intake:
-        if not is_existing and (not c_name.strip() or not c_phone.strip()):
-            st.error("חובה להזין שם לקוח ומספר טלפון!")
-        elif not is_existing and selected_existing_bike == "➕ הוסף זוג אופניים חדש ללקוח זה" and not new_bike_brand_input.strip():
-            st.error("חובה להזין את שם חברה / דגם האופניים!")
-        elif is_existing and selected_existing_bike == "➕ הוסף זוג אופניים חדש ללקוח זה" and not new_bike_brand_input.strip():
-            st.error("חובה להזין את שם חברה / דגם האופניים!")
-        elif not issue_desc.strip():
-            st.error("חובה להזין את תיאור התקלה!")
+        if is_existing and selected_existing_bike != "➕ הוסף זוג אופניים חדש ללקוח זה":
+            st.info(f"נבחרו האופניים השמורים: **{selected_existing_bike}**")
+            final_bike_name = selected_existing_bike
+            wheel_size_select = None
+            color_input = ""
+            frame_serial = ""
         else:
-            ins_conn = get_connection()
-            cursor = ins_conn.cursor()
+            st.subheader("🚲 פרטי האופניים החדשים")
+            
+            # תיבת בחירה מסודרת ומקצועית מתוך המאגר הקיים
+            brand_selection_options = ["-- בחר חברה מהרשימה או הקלד למטה --"] + saved_models
+            chosen_brand_from_list = st.selectbox("בחר חברה מהמאגר הקיים (או בחר את השורה הראשונה והקלד חברה חדשה מתחת):", brand_selection_options)
 
-            if not is_existing:
-                cursor.execute("INSERT INTO customers (name, phone) VALUES (?, ?)", (c_name.strip(), c_phone.strip()))
-                customer_id = cursor.lastrowid
+            new_bike_brand_input = st.text_input("או הקלד שם חברה / דגם חדש:", placeholder="למשל: Trinks, Trek, Specialized...")
 
-            if is_existing and selected_existing_bike != "➕ הוסף זוג אופניים חדש ללקוח זה":
-                bike_id = bike_map[selected_existing_bike]
+            col_spec1, col_spec2, col_spec3 = st.columns(3)
+            with col_spec1:
+                wheel_size_options = ['29"', '27.5"', '26"', "700c", '24"', '20"', '16"', "אחר"]
+                wheel_size_select = st.selectbox("גודל גלגל:", wheel_size_options)
+            with col_spec2:
+                color_input = st.text_input("צבע האופניים:", placeholder="למשל: שחור מט / אדום")
+            with col_spec3:
+                frame_serial = st.text_input("מספר שלדה (אופציונלי):")
+
+        st.markdown("---")
+        st.subheader("🛠️ הבעיה והטיפול")
+        
+        intake_date_input = st.date_input("📅 תאריך פתיחת טיפול:", value=date.today())
+        issue_desc = st.text_area("תקלה מדווחת (על מה הלקוח מתלונן?) *", placeholder="למשל: רעשים מהפדלים, שרשרת קופצת...")
+        work_done_initial = st.text_area("טיפול שנעשה בפועל (אופציונלי):", placeholder="הערות טכניות / עבודה שבוצעה...")
+        est_price = st.number_input("הערכת מחיר ראשונית ב-₪:", min_value=0.0, step=10.0)
+
+        submit_intake = st.form_submit_button("🚀 שמור ופתח כרטיס תיקון", type="primary")
+
+        if submit_intake:
+            # קביעת שם האופניים הנבחר (מהרשימה או מההקלדה החופשית)
+            final_bike_name = ""
+            if selected_existing_bike == "➕ הוסף זוג אופניים חדש ללקוח זה":
+                if new_bike_brand_input.strip():
+                    final_bike_name = new_bike_brand_input.strip()
+                elif chosen_brand_from_list != "-- בחר חברה מהרשימה או הקלד למטה --":
+                    final_bike_name = chosen_brand_from_list
+
+            if not is_existing and (not c_name.strip() or not c_phone.strip()):
+                st.error("חובה להזין שם לקוח ומספר טלפון!")
+            elif selected_existing_bike == "➕ הוסף זוג אופניים חדש ללקוח זה" and not final_bike_name:
+                st.error("חובה לבחור חברה מהרשימה או להקליד שם חברה / דגם חדש!")
+            elif not issue_desc.strip():
+                st.error("חובה להזין את תיאור התקלה!")
             else:
-                final_bike_name = new_bike_brand_input.strip()
+                ins_conn = get_connection()
+                cursor = ins_conn.cursor()
+
+                if not is_existing:
+                    cursor.execute("INSERT INTO customers (name, phone) VALUES (?, ?)", (c_name.strip(), c_phone.strip()))
+                    customer_id = cursor.lastrowid
+
+                if is_existing and selected_existing_bike != "➕ הוסף זוג אופניים חדש ללקוח זה":
+                    bike_id = bike_map[selected_existing_bike]
+                else:
+                    cursor.execute(
+                        "INSERT INTO bikes (customer_id, brand_model, wheel_size, color, frame_serial) VALUES (?, ?, ?, ?, ?)",
+                        (customer_id, final_bike_name, wheel_size_select, color_input.strip(), frame_serial.strip())
+                    )
+                    bike_id = cursor.lastrowid
+
+                    if final_bike_name:
+                        cursor.execute("INSERT OR IGNORE INTO bike_models (brand_model_name) VALUES (?)", (final_bike_name,))
 
                 cursor.execute(
-                    "INSERT INTO bikes (customer_id, brand_model, wheel_size, color, frame_serial) VALUES (?, ?, ?, ?, ?)",
-                    (customer_id, final_bike_name, wheel_size_select, color_input.strip(), frame_serial.strip())
+                    "INSERT INTO work_orders (bike_id, intake_date, issue_description, work_done, estimated_price, final_price, status) VALUES (?, ?, ?, ?, ?, ?, 'בטיפול')",
+                    (bike_id, str(intake_date_input), issue_desc.strip(), work_done_initial.strip(), est_price, est_price)
                 )
-                bike_id = cursor.lastrowid
 
-                # שמירה אוטומטית של השם החדש למאגר ה-bike_models כך שישאר זמין במערכת לעד
-                if final_bike_name:
-                    cursor.execute("INSERT OR IGNORE INTO bike_models (brand_model_name) VALUES (?)", (final_bike_name,))
-
-            cursor.execute(
-                "INSERT INTO work_orders (bike_id, intake_date, issue_description, work_done, estimated_price, final_price, status) VALUES (?, ?, ?, ?, ?, ?, 'בטיפול')",
-                (bike_id, str(intake_date_input), issue_desc.strip(), work_done_initial.strip(), est_price, est_price)
-            )
-
-            ins_conn.commit()
-            ins_conn.close()
-            st.session_state["success_msg"] = f"🎉 כרטיס נפתח בהצלחה! הטופס מוכן ללקוח הבא."
-            st.rerun()
+                ins_conn.commit()
+                ins_conn.close()
+                st.session_state["success_msg"] = f"🎉 כרטיס נפתח בהצלחה! הטופס מוכן ללקוח הבא."
+                st.rerun()
 
 # ==========================================
 # 3. ניהול לקוחות והיסטוריה

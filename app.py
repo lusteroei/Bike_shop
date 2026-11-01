@@ -72,6 +72,14 @@ def init_db():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS workshop_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_text TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     cursor.execute("PRAGMA table_info(bikes)")
     columns = [col[1] for col in cursor.fetchall()]
     if "wheel_size" not in columns:
@@ -233,6 +241,42 @@ if choice == "🏠 דף ראשי - לוח כרטיסים פעילים":
     st.title("📋 לוח תיקונים פעילים בסדנה")
     st.caption("ניהול מלא של הכרטיסים, סטטוסים, הוספת חלקים מהמחירון ושליחת וואטסאפ ללקוח")
 
+    # --- אזור תזכורות / משימות יומיות גלוי לחלוטין ---
+    st.subheader("📌 פתקיות ותזכורות יומיות בסדנה")
+    
+    with st.form("quick_task_form", clear_on_submit=True):
+        col_inp, col_btn = st.columns([4, 1])
+        with col_inp:
+            new_task_text = st.text_input("הוסף תזכורת מהירה:", placeholder="למשל: להזמין שרשרת, להתקשר לספק...", label_visibility="collapsed")
+        with col_btn:
+            submit_task = st.form_submit_button("➕ הוסף תזכורת", type="primary")
+        
+        if submit_task and new_task_text.strip():
+            t_conn = get_connection()
+            t_conn.execute("INSERT INTO workshop_tasks (task_text) VALUES (?)", (new_task_text.strip(),))
+            t_conn.commit()
+            t_conn.close()
+            st.rerun()
+
+    t_conn = get_connection()
+    df_tasks = pd.read_sql_query("SELECT id, task_text FROM workshop_tasks ORDER BY id DESC", t_conn)
+    t_conn.close()
+
+    if not df_tasks.empty:
+        for _, t_row in df_tasks.iterrows():
+            col_t1, col_t2 = st.columns([6, 1])
+            col_t1.info(f"📌 {t_row['task_text']}")
+            if col_t2.button("✔️ בוצע", key=f"del_task_{t_row['id']}"):
+                del_t_conn = get_connection()
+                del_t_conn.execute("DELETE FROM workshop_tasks WHERE id = ?", (t_row['id'],))
+                del_t_conn.commit()
+                del_t_conn.close()
+                st.rerun()
+    else:
+        st.caption("אין תזכורות פתוחות כרגע.")
+
+    st.markdown("---")
+
     conn = get_connection()
     df_parts_avail = pd.read_sql_query("SELECT id, part_name, price FROM inventory ORDER BY part_name ASC", conn)
     parts_list = ["-- בחר פריט --"] + [f"{p_row['part_name']} (₪{p_row['price']})" for _, p_row in df_parts_avail.iterrows()]
@@ -324,6 +368,16 @@ if choice == "🏠 דף ראשי - לוח כרטיסים פעילים":
                 col_info, col_status = st.columns([2, 1])
 
                 with col_info:
+                    st.write(f"👤 **לקוח:** {row['cust_name']} | 📞 **טלפון:** {row['cust_phone']}")
+                    phone_copy_key = f"copy_phone_{wo_id}"
+                    bike_copy_key = f"copy_bike_{wo_id}"
+                    
+                    c_btn1, c_btn2 = st.columns(2)
+                    if c_btn1.button("📋 העתק מספר טלפון", key=phone_copy_key):
+                        st.toast(f"הועתק לזיכרון: {row['cust_phone']}")
+                    if c_btn2.button("📋 העתק פרטי אופניים", key=bike_copy_key):
+                        st.toast(f"הועתק לזיכרון: {details_str}")
+
                     st.write(f"🛠️ **תקלה מדווחת (מהלקוח):** {row['raw_issue']}")
                     st.write(f"⚙️ **טיפול שנעשה בפועל:** {st.session_state[work_key] or 'טרם הוזן'}")
                     st.write(f"💰 **מחיר משוער בקבלה:** ₪{row['est_price'] or 0}")
@@ -523,9 +577,8 @@ elif choice == "➕ קבלת תיקון / לקוח חדש":
         else:
             st.subheader("🚲 פרטי האופניים החדשים")
             
-            # תיבת בחירה מסודרת ומקצועית מתוך המאגר הקיים
             brand_selection_options = ["-- בחר חברה מהרשימה או הקלד למטה --"] + saved_models
-            chosen_brand_from_list = st.selectbox("בחר חברה מהמאגר הקיים (או בחר את השורה הראשונה והקלד חברה חדשה מתחת):", brand_selection_options)
+            chosen_brand_from_list = st.selectbox("בחר חברה מהמאגר הקיים:", brand_selection_options)
 
             new_bike_brand_input = st.text_input("או הקלד שם חברה / דגם חדש:", placeholder="למשל: Trinks, Trek, Specialized...")
 
@@ -543,13 +596,12 @@ elif choice == "➕ קבלת תיקון / לקוח חדש":
         
         intake_date_input = st.date_input("📅 תאריך פתיחת טיפול:", value=date.today())
         issue_desc = st.text_area("תקלה מדווחת (על מה הלקוח מתלונן?) *", placeholder="למשל: רעשים מהפדלים, שרשרת קופצת...")
-        work_done_initial = st.text_area("טיפול שנעשה בפועל (אופציונלי):", placeholder="הערות טכניות / עבודה שבוצעה...")
+        work_done_initial = st.text_area("טיפול שנעשה בפועל (אופציונלי):", placeholder="הערות טכניות / עבודה שבוצעה...", placeholder_visibility="visible")
         est_price = st.number_input("הערכת מחיר ראשונית ב-₪:", min_value=0.0, step=10.0)
 
         submit_intake = st.form_submit_button("🚀 שמור ופתח כרטיס תיקון", type="primary")
 
         if submit_intake:
-            # קביעת שם האופניים הנבחר (מהרשימה או מההקלדה החופשית)
             final_bike_name = ""
             if selected_existing_bike == "➕ הוסף זוג אופניים חדש ללקוח זה":
                 if new_bike_brand_input.strip():
